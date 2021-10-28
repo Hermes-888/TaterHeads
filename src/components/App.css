@@ -1,0 +1,40 @@
+/* Styles go here */
+
+.token-color {
+  height: 150px;
+  width: 150px;
+  border-radius: 10%;
+  display: inline-block;
+}
+.token-image {
+  cursor: pointer;
+  height: 120px;
+  width: 120px;
+  border-radius: 10%;
+  display: inline-block;
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+.token-text {
+  margin: 20px;
+  color: #333333;
+  text-align: center;
+  font-weight: bold;
+  border-radius: 5px;
+  border: 1px solid #333333;
+  background-color: #ffffff;
+}
+.spacer {
+  margin: 0 10px;
+}
+.card {
+  padding: 5px;
+  border: 2px solid #333333;
+}
+.nft-image {
+  height: 300px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  /* border: 2px solid #333333; */
+}
