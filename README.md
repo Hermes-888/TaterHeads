@@ -17,7 +17,7 @@ Metamask: https://metamask.io/<br/>
 
 ## Step 1. Clone this project
 ```bash 
-git clone https://github.com/dappuniversity/nft.git
+git clone https://github.com/Hermes-888/TaterHeads.git
 ```
 
 ## Step 2. Install dependencies
@@ -34,7 +34,9 @@ https://getbootstrap.com/docs/5.1/getting-started/download/#npm
 
 
 ## Step 3. Start a local test blockchain
-```truffle develop```
+```bash
+truffle develop
+```
 
 OR :: 
 Open the Ganache GUI client. 
@@ -54,7 +56,12 @@ networks: {
 ```
 
 ## Step 4. Compile & Deploy Smart Contract
-```truffle migrate --reset``` Migrate the contract to deploy it to your local blockchain.
+Migrate the contract to deploy it to your local blockchain.
+
+```bash
+truffle migrate --reset
+```
+
 
 ## Step 5. Configure Metamask
 -Unlock Metamask <br/>
@@ -62,7 +69,7 @@ networks: {
 -Import an account provided by truffle or ganache.
 
 ## Step 6. Run the Front End Application
-```
+```bash
 cd src
 npm start
 ```
