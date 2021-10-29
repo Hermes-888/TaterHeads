@@ -2,8 +2,6 @@ import React, { Component } from 'react';
 import Web3 from 'web3';
 import './App.css';
 import TaterFaceNFT from '../abis/TaterFaceNFT.json';
-// https://github.com/dappuniversity/nft
-// import Color from '../abis/Color.json';
 
 class App extends Component {
 
