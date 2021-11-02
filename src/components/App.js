@@ -10,6 +10,7 @@ class App extends Component {
     this.state = {
       contract: null,// to call methods & get events
       contractAddress: '',// gets paid
+      contractOwner: '',// owner who deployed contract
       contractBalance: 0,
       tokenFee: 10000000000000000,// set from contract
       currentFee: 0.01,// wei, changable by owner
@@ -17,18 +18,19 @@ class App extends Component {
       // totalSupply: 10,// NA
       maxSupply: 10,// set from contract
       tokenName: '',// randomName
-      account: '',// connected buyer
-      connectedAccounts: [],
+      tokenURI: '',// .json file path
+      tokenId: 0,// faces[index]
+      connectedAccount: '',// connected user
+      connectedAccounts: [],// all connected users
       ownerBalance: 0,// # of tokens owned by connected
       faces: [],// Minted Faces Array of Objects
-      tokenId: 0,
       lastNum: 0,// last randomNum()
       currentImage: '',// tokenURI
-      jsonData: []// token metadata.json
+      jsonData: []// Array for .map, token metadata.json
     }
   }
   /*
-    struct Face {
+    contract Face {
       string name;// user defined
       string tokenURI;// "https://ipfs.io/ipfs/IPFS_File_Hash"
       address tokenOwner;// purchaser
@@ -36,16 +38,14 @@ class App extends Component {
       uint256 dna;
       uint8 rarity;
       uint8 level;
-      bool exists;// require creation
     }
   */
-    // use baseURI/_metadata.json to track sold tokens?
+    // ToDo: use baseURI/_metadata.json to track sold tokens?
+    // ToDo: withdraw()
 
   async componentWillMount() {
     await this.loadWeb3();
     await this.loadBlockchainData();
-    // this.randomNum();// get first image
-    this.randomName();// display first name
   }
 
   async loadWeb3() {
@@ -64,7 +64,7 @@ class App extends Component {
   async loadBlockchainData() {
     const web3 = window.web3;
     const accounts = await web3.eth.getAccounts();
-    this.setState({ account: accounts[0] });
+    this.setState({ connectedAccount: accounts[0] });
     this.setState({ connectedAccounts: accounts});
 
     const networkId = await web3.eth.net.getId();
@@ -76,90 +76,76 @@ class App extends Component {
       const contract = new web3.eth.Contract(abi, address);
       this.setState({ contractAddress: address});
       this.setState({ contract });
-      //contractBalance
-      // const balance = await contract.methods.balanceOf(address).call();// contract 0 Faces
-    // console.log(contract);
+      console.log('contract address:', address);// network.address
+
       const contractBalance = await contract.methods.contractBalance().call();
       this.setState({ contractBalance: web3.utils.fromWei(contractBalance, 'ether') });
       // const contractBalance = await web3.eth.getBalance(address);// 10000000000000000
       console.log('contractBalance:', contractBalance, this.state.contractBalance);
-      
+      // contractBalance: 18014298536113694000000000 18014298.536113694
+      // const balance = await contract.methods.balanceOf(address).call();
+      // console.log('BALANCE:', balance);// 0 tokens
+
       // By default, the owner account will be the one that deploys the contract. 
       // This can later be changed with transferOwnership(address newOwner).
       const owner = await contract.methods.owner().call();
-      console.log('owner:', owner);// connected user
+      console.log('contractOwner:', owner);// contract owner address
+      this.setState({contractOwner: owner});
       const ownerBalance = await contract.methods.balanceOf(owner).call();
       this.setState({ ownerBalance: ownerBalance});// # of tokens owned
       console.log('ownerBalance:', ownerBalance);
 
-      // Not Available. ADD ERC721Enumerable?
-      // const totalSupply = await contract.methods.totalSupply().call();
-      // this.setState({ totalSupply });// Error: not a function
-
+      console.log('connectedAccount:', this.state.connectedAccount);
+      console.log('accounts:', accounts);// all connected users
       // const baseURI = await contract.methods.baseURI().call();
       // this.setState({ baseURI });
-      // setBaseURI()
 
-      const tokenFee = await contract.methods.fee().call();
-      this.setState({tokenFee: tokenFee});
-      const currentFee = web3.utils.fromWei(tokenFee, 'ether');
-      console.log('tokenFee:', tokenFee, 'curentFee:', currentFee);
-      this.setState({ currentFee: currentFee });
-
-      const maxSupply = await contract.methods.maxSupply().call();
-      this.setState({ maxSupply: maxSupply });
-
-      // Load All Minted Faces
+      // All Minted Faces
       const mintedFaces = await contract.methods.getFaces().call();
       console.log('Minted Faces:', mintedFaces);
 
-      // faces for the connected account
-      const ownedFaces = await contract.methods.getOwnerFaces(owner).call();
-      // const ownedFaces = await contract.methods.getOwnerFaces(address).call();
+      // faces owned by the connected account
+      const ownedFaces = await contract.methods.getOwnerFaces(this.state.connectedAccount).call();
       console.log('Owned Faces:', ownedFaces);// connected account
       this.setState({faces: ownedFaces});
       if (ownedFaces.length > 0) {
         this.displayNFT(0);// on first load
       }
 
+      const tokenFee = await contract.methods.fee().call();
+      this.setState({tokenFee: tokenFee});
+      const currentFee = web3.utils.fromWei(tokenFee, 'ether');
+      console.log('tokenFee:', tokenFee, 'curentFee:', currentFee);
+      this.setState({currentFee: currentFee});
+
+      const maxSupply = await contract.methods.maxSupply().call();
+      this.setState({ maxSupply: maxSupply });
+      console.log('maxSupply:', maxSupply);
+
       // see data
-      console.log('web3.utils', web3);// web3.utils
+      // console.log('web3.utils', web3);// web3.utils
       console.log('GasPrice:', await web3.eth.getGasPrice());
       console.log('networkId:', networkId);// 5777
       // console.log('networkData:', networkData);
-      console.log('account:', this.state.account);
-      // account: 0x19A0b9059e28B17E75c5D7827Ac2bd8Cb7ae4087
-      // p: 3nterTh3Bl0ck
-      // Idea: use the connected account to generate a random number
-
-      console.log('accounts:', accounts);// connected users
-      console.log('contract address:', address);// network.address
       console.log('contract:', contract);
-      // contract address: 0xe10a7662D115CA416114B50Ad167CE8B1B167A7f
       // console.log('state:', this.state);
       
-      // https://web3js.readthedocs.io/en/v1.2.9/web3-eth-contract.html#contract-events
-      // myContract.events.allEvents([options][, callback]);
-      // myContract.events.MyEvent([options][, callback])
-      // Listen for event FaceMinted(address indexed owner, uint256 id, Face[] faces, exists);
-      // returns owner, id, XX-faces
-      const comp = this;
+      /**
+       * listen for contract FaceMinted event
+       * FaceMinted(address owner, uint256 id, Face[] faces);
+       * returnValues: owner, id, faces[]
+       * https://web3js.readthedocs.io/en/v1.5.2/web3-eth-contract.html#contract-events
+       */
+      const comp = this;// App scope
       contract.events.FaceMinted({}, function(error, event) {
-        // console.log('FaceMinted: event:', event);
+        // console.log('event owner:', event.returnValues.owner);
         console.log('FaceMinted: returnValues:', event.returnValues);
-        // returnValues: owner, "id", faces[]
 
-        // comp.setState({faces: event.returnValues.faces});
-        // console.log('FaceMinted: faces:', event.returnValues.faces);
-        // remove from available to mint list
-
-        // get this owners faces
-        contract.methods.getOwnerFaces(owner).call()
+        // get this connectedAccount faces
+        contract.methods.getOwnerFaces(event.returnValues.owner).call()
         .then(function(data) {
           console.log('ownedFaces data:', data);
           comp.setState({faces: data});
-          // display the image and metadata.json
-          // comp.displayNFT(parseInt(event.returnValues.id));
         }).catch(function(err) {
           console.log('error', err);
         });
@@ -171,24 +157,29 @@ class App extends Component {
           let imagePath = url.substr(0, url.length-4) + 'png';
           comp.setState({currentImage: imagePath});// display the token image
           comp.fetchJsonData(url);// display the token metadata
+          // ToDo: remove id from available to mint list
         }).catch(function(err) {
           console.log('error', err);
         });
+
+        // ToDo: FIX & update contract balance
+        // const contractBalance = await contract.methods.contractBalance().call();
+        // this.setState({contractBalance: web3.utils.fromWei(contractBalance, 'ether')});
       })
       .on('connected', function(subscriptionId) {
         console.log('connected subscriptionId::', subscriptionId);
       })
-      .on('data', function(event) {
-        console.log('data::', event);// same results as the optional callback above
-      })
+      // .on('data', function(event) {
+      //   console.log('data::', event);// same results as the callback above
+      // })
       .on('changed', function(event) {
         console.log('changed::', event);// remove event from local database
       })
       .on('error', function(error, receipt) { 
-        // If the transaction was rejected by the network with a receipt, 
+        // If the transaction was rejected by the network, 
         // the second parameter will be the receipt.
         console.log('error::', error);
-        console.log('receipt::', receipt);
+        // console.log('receipt::', receipt);
       });
       
     } else {
@@ -197,22 +188,20 @@ class App extends Component {
   }
   
   // functions
-  // Buyer enters the name. Code sends tokenURI
-  mint = (name) => {
-    if (name === '') {
-      name = this.randomName();// generate a token name
-    }
+  // Code sends a random name and tokenURI
+  mint = () => {
+    let name = this.randomName();// generate a token name
     let num = this.randomNum();// sets lastNum and large preview image
     let tokenURI = this.state.baseURI + num + '.json';
     this.setState({tokenName: name});// display token name
+    this.setState({tokenURI: tokenURI});
     this.setState({tokenId: num});
     console.log('Minting:', name, num, tokenURI);
-    // ToDo: add name to json file?
 
     this.state.contract.methods.createNewFace(name, tokenURI).send({
-      from: this.state.account, 
+      from: this.state.connectedAccount,
       value: this.state.tokenFee
-    })// currentFee for UI
+    })
     .once('receipt', (receipt) => {
       console.log('Minted receipt: from:', receipt.from);
       console.log('Minted receipt: to:', receipt.to);
@@ -220,10 +209,6 @@ class App extends Component {
       console.log('Minted receipt: receipt:', receipt);
       // comp.setState({faces: receipt.events.FaceMinted.returnValues.faces});
       // wait for FaceMinted event listener
-
-      // update contract balance
-      // const contractBalance = await contract.methods.contractBalance().call();
-      // this.setState({ contractBalance: web3.utils.fromWei(contractBalance, 'ether') });
     });
   }
 
@@ -261,7 +246,7 @@ class App extends Component {
   }
   
   fetchJsonData = (path) => {
-    let comp = this;
+    let comp = this;// app scope
     fetch(path, {
       headers: { 
         'Content-Type': 'application/json',
@@ -270,9 +255,12 @@ class App extends Component {
     }).then(function(result) {
       return result.json();
     }).then(function(data) {
-      comp.setState({tokenId: data.edition});
-      comp.setState({tokenName: data.name});
+      // adjust generated json metadata (for now)
+      data.name = comp.state.tokenName;
+      data.tokenURI = comp.state.tokenURI;
+      data.image = comp.state.currentImage;
       comp.setState({jsonData: [data]});
+      comp.setState({tokenId: data.edition});
       console.log('jsonData:', data);
     }).catch(
       function(err) {
@@ -291,16 +279,20 @@ class App extends Component {
   displayNFT = (id) => {
     let imagePath = this.getImagePath(id);
     this.setState({currentImage: imagePath});
-    let path = this.state.faces[parseInt(id)].tokenURI;// .json
-    this.fetchJsonData(path);
-    console.log('currentImage:', id, this.state.currentImage);
+    //let path = this.state.faces[parseInt(id)].tokenURI;// .json
+    let face = this.state.faces[parseInt(id)];
+    this.setState({tokenId: id});
+    this.setState({tokenName: face.name});
+    this.setState({tokenURI: face.tokenURI});
+    this.fetchJsonData(face.tokenURI);// path to metadata
+    console.log('currentImage:', this.state.currentImage);
   }
 
   // https://web3js.readthedocs.io/en/v1.2.11/web3-utils.html
+  // ToDo: FIX
   updateFee = (fee) => {
     let comp = this;
     let newFee = window.web3.utils.toWei(fee, 'ether');
-    //const currentFee = web3.utils.fromWei(tokenFee, 'ether');
     console.log('updateFee:', fee, newFee);// 0.22, 220000000000000000
     // fee throws Error: invalid BigNumber string (argument="value", value="0.22",
     this.state.contract.methods.setFee(newFee).call()
@@ -334,7 +326,7 @@ class App extends Component {
         <nav className="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
           <div className="col-xs-12 col-md-4 text-left">
             <a className="navbar-brand ml-3"
-              href="http://www.dappuniversity.com/bootcamp"
+              href="http://localhost:3000/"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -345,8 +337,8 @@ class App extends Component {
             <ul className="navbar-nav px-3">
               <li className="nav-item text-nowrap d-none d-sm-none d-sm-block">
                 <small className="text-white">
-                  Connected: &nbsp;
-                  <span id="account"> {this.state.account}</span>
+                  Contract: &nbsp;
+                  <span id="contract">{this.state.contractAddress}</span>
                 </small>
               </li>
             </ul>
@@ -388,6 +380,7 @@ class App extends Component {
             </div>
           </div>
           <hr style={{borderWidth:"3px"}}/>
+
           <div className="row text-center">
             {this.state.faces.map((face, index) => {
               return(
@@ -406,25 +399,18 @@ class App extends Component {
               )
             })}
           </div>
-          <hr/>
+          <hr style={{borderWidth:"3px"}}/>
+
           <div className="row">
-            <div className="col-sm-4 col-md-5 text-left">
+            <div className="col-sm-6 text-left">
               <div className="content mr-auto ml-auto">
-                <form onSubmit={(event) => {
-                  event.preventDefault()
-                  const name = this.name.value;
-                  this.mint(name)
-                }}>
-                  <input type='text'
-                    className='form-control mb-1'
-                    placeholder='e.g. Any Name'
-                    ref={(input) => { this.name = input }}
-                  />
-                  <input type='submit'
-                    className='btn btn-block btn-primary'
-                    value='MINT TATER'
-                  />
-                </form>
+                <input type='submit'
+                  className='btn btn-block btn-primary'
+                  value='MINT A TOKEN'
+                  onClick={() => {
+                    this.mint();
+                  }}
+                />
               </div>
               <hr/>
               <div>{
@@ -436,6 +422,7 @@ class App extends Component {
                       <div>Edition: {data.edition}</div>
                       <div>DNA: {data.dna}</div>
                       <div>Image: {data.image}</div>
+                      <div>Data: {data.tokenURI}</div>
                       <div>Compiler: {data.compiler}</div>
                       <div>Description: {data.description}</div>
                     </div>)
@@ -454,7 +441,7 @@ class App extends Component {
                 <div>{this.state.tokenName}</div>
               </div>
             </div>
-            <div className="col-sm-8 col-md-7 text-left">
+            <div className="col-sm-6 text-left">
               <div className="nft-image"
                 style={{ backgroundImage:'url('+this.state.currentImage+')' }}
               ></div>

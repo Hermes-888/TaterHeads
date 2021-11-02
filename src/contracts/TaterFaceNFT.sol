@@ -16,9 +16,9 @@ pragma solidity ^0.8.0;
 
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
 
 contract TaterFaceNFT is ERC721URIStorage, Ownable {
   using Counters for Counters.Counter;
@@ -31,17 +31,18 @@ contract TaterFaceNFT is ERC721URIStorage, Ownable {
   uint256 public maxSupply = 10;
   uint8 level = 1;
 
+  bool public paused = false;
   // string public baseURI = "";
   // address payable commissions = payable(0x57d5f07f545a88680db136dff37627f6ed942b6b);
   
   struct Face {
-    string name;// user defined
+    string name;// random
     string tokenURI;// "https://ipfs.io/ipfs/IPFS_File_Hash"
     address tokenOwner;// purchaser
-    uint256 id;// edition
-    uint256 dna;
-    uint8 rarity;
-    uint8 level;
+    uint256 id;// edition/maxSupply
+    uint256 dna;// random (?)
+    uint8 rarity;// random (0~100)
+    uint8 level;// series
   }
 
   Face[] public faces;
@@ -70,9 +71,10 @@ contract TaterFaceNFT is ERC721URIStorage, Ownable {
     uint8 randRarity = uint8(_createRandomNum(100));
     uint256 randDna = _createRandomNum(10**16);
 
-    _tokenIds.increment();
+    _tokenIds.increment();// 1 to maxSupply
     uint256 itemId = _tokenIds.current();
-    require(itemId >= 0, "itemId failed, it is not >= 0.");
+    // _tokenIds.increment();// 0 to maxSupply?
+
     _safeMint(recipient, itemId);
     _setTokenURI(itemId, _tokenURI);
 
@@ -80,12 +82,16 @@ contract TaterFaceNFT is ERC721URIStorage, Ownable {
     require(newFace.level >= 0, "A new Face was not created.");
     faces.push(newFace);
 
+    // pause minting if all tokens have been sold
+    // if (itemId == maxSupply) { paused = true; }
+
     emit FaceMinted(msg.sender, itemId, faces);
   }
 
   // Buyer enters the name. Code sends tokenURI, account, value
+  // rename: mintNewToken
   function createNewFace(string memory _name, string memory _tokenURI) public payable {
-    // require(!paused, "the contract is paused");
+    require(!paused, "the contract is paused");
     require(msg.value >= fee, "Not enough ether to mint token.");
     _createFace(_name, msg.sender, _tokenURI);
     // (bool success, ) = payable(commissions).call{value: msg.value * 6 / 100}("");
@@ -129,31 +135,24 @@ contract TaterFaceNFT is ERC721URIStorage, Ownable {
     return owner().balance;
   }
 
-  // function withdraw() public payable onlyOwner {
-  //   require(payable(msg.sender).send(address(this).balance));
-  // }
   function withdraw() external payable onlyOwner() {
     address payable _owner = payable(owner());
     _owner.transfer(address(this).balance);
   }
-  /*
-  function setMaxMintAmount(uint256 _newMaxMintAmount) public onlyOwner() {
-    maxMintAmount = _newMaxMintAmount;
+
+  function setMaxSupply(uint256 _newMaxSupply) public onlyOwner() {
+    maxSupply = _newMaxSupply;
   }
 
+  function pause(bool _state) public onlyOwner {
+    paused = _state;// set by contract
+  }
+  /*
   function setBaseURI(string memory _newBaseURI) public onlyOwner {
     baseURI = _newBaseURI;
   }
-
-  function setBaseExtension(string memory _newBaseExtension) public onlyOwner {
-    baseExtension = _newBaseExtension;
-  }
-  
-  function pause(bool _state) public onlyOwner {
-    paused = _state;
-  }
  
- function whitelistUser(address _user) public onlyOwner {
+  function whitelistUser(address _user) public onlyOwner {
     whitelisted[_user] = true;
   }
  
