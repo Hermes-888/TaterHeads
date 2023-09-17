@@ -1,0 +1,1270 @@
+list of contract functions
+// ================================================================
+// https://etherscan.io/address/0x5019d54f18fef36f6b22ac55a2aa2fb7009f308f#code
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.9;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+contract Temple is ERC721URIStorage, ReentrancyGuard, Ownable {
+    
+    using Strings for uint256;
+
+    event Activate();
+    event Deactivate();
+    event Initialize();
+
+    bool public isSaleActive = false;
+
+    uint256 constant public maxMintAtOnce = 50;
+    address constant public traceBurnAddress = 0x0000000000000000000000000000000000000000;
+    address constant public fragmentBurnAddress = 0x000000000000000000000000000000000000dEaD;
+
+    // For Trace usage
+    address public traceContract;
+    uint256 constant public tracePerTemple = 100;
+
+    // For Fragment usage
+    address public fragmentContract;
+    uint256 constant public fragmentPerTemple = 1;
+    uint256 constant public fragmentId = 1;
+
+    uint256 constant public maxTemplesFromFragments = 1477;
+    uint256 constant public maxTemplesFromTrace = 9706;
+
+    uint256 public currFragmentTempleIDPointer = 0;
+    uint256 public currTraceTempleIDPointer = maxTemplesFromFragments;
+
+    string public baseURI;
+    
+    constructor() ERC721("Temple", "TMPL") {
+    }
+    
+    function setBaseURI(string memory baseURI_) external onlyOwner {
+        baseURI = baseURI_;
+    }
+    
+    function _baseURI() internal view override returns (string memory) {
+        return baseURI;
+    }
+    
+    // Toggle Activate/Deactivate ability to smelt fragments
+    function toggleSale() public onlyOwner {
+        isSaleActive = !isSaleActive;
+
+        if (isSaleActive == true) {
+            emit Activate();
+        } else {
+            emit Deactivate();
+        }
+    }
+
+    // Initialize the sale
+    function initializeSale(address traceContract_, address fragmentContract_, string memory baseURI_) public onlyOwner {
+        require(!isSaleActive, "First disable Temple Minting to re-initialize.");
+
+        traceContract = traceContract_;
+        fragmentContract = fragmentContract_;
+        baseURI = baseURI_;
+
+        emit Initialize();
+    }
+
+    // Mint a temple using Fragments
+    function mintTempleWithFragments(uint256 numTemplesToMint) external nonReentrant {
+        ERC1155 fragmentTokenImpl = ERC1155(fragmentContract);
+        uint256 fragmentBurnAmount = numTemplesToMint * fragmentPerTemple;
+
+        require(isSaleActive, "Sale is not active at this time.");
+        require(numTemplesToMint > 0 && numTemplesToMint <= maxMintAtOnce, "Must mint between 1 and 50 Temples");
+
+        require((currFragmentTempleIDPointer + numTemplesToMint) <= maxTemplesFromFragments, "Requested count for Fragment Temples exceeds the maximum number of Fragment Temples.");
+    
+        require(fragmentTokenImpl.balanceOf(msg.sender, fragmentId) >= (fragmentBurnAmount), "You do not have enough Fragments to mint your Temples.");
+        
+        try fragmentTokenImpl.safeTransferFrom(msg.sender, address(fragmentBurnAddress), fragmentId, fragmentBurnAmount, "0x") {
+        } catch (bytes memory) {
+            revert("Burn failure");
+        }
+    
+        for (uint i = 0; i < numTemplesToMint; i++) {
+            currFragmentTempleIDPointer++;
+            _safeMint(msg.sender, currFragmentTempleIDPointer);
+            _setTokenURI(currFragmentTempleIDPointer, Strings.toString(currFragmentTempleIDPointer));
+        }
+    }
+
+    // Mint a temple using Trace
+    function mintTempleWithTrace(uint256 numTemplesToMint) external nonReentrant {
+        IERC20 traceTokenImpl = IERC20(traceContract);
+        uint256 traceBurnAmount = numTemplesToMint * tracePerTemple;
+
+        require(isSaleActive, "Sale is not active at this time.");
+        require(numTemplesToMint > 0 && numTemplesToMint <= maxMintAtOnce, "Must mint between 1 and 50 Temples");
+        
+        require((currTraceTempleIDPointer + numTemplesToMint - maxTemplesFromFragments) <= maxTemplesFromTrace, "Requested count for Trace Temples exceeds the maximum number of Trace Temples.");
+
+        require(traceTokenImpl.balanceOf(msg.sender) >= (traceBurnAmount), "You do not have enough $TRCE to mint your Temples.");
+        
+        try traceTokenImpl.transferFrom(msg.sender, address(traceBurnAddress), traceBurnAmount) {
+        } catch (bytes memory) {
+            revert("Failed to burn $TRCE - Please verify that you have approved the correct number of tokens. Reverting.");
+        }
+
+        for (uint i = 0; i < numTemplesToMint; i++) {
+            currTraceTempleIDPointer++;
+            _safeMint(msg.sender, currTraceTempleIDPointer);
+            _setTokenURI(currTraceTempleIDPointer, Strings.toString(currTraceTempleIDPointer));
+        }
+    }
+}
+
+// ================================================================
+// https://etherscan.io/address/0x36a52262a85bf8fe213267da4ed85e42e1efed82#code
+
+contract Horizon is ERC721("Hor1zon", "H1Z"), ERC721Enumerable, Ownable {
+    using SafeMath for uint256;
+    using Strings for uint256;
+    /*
+     * Currently Assuming there will be one baseURI.
+     * If it fails to upload all NFTs data under one baseURI,
+     * we will divide baseURI and tokenURI function will be changed accordingly.
+    */
+    string private baseURI;
+    string private blindURI;
+    uint256 public constant BUY_LIMIT_PER_TX = 5;
+    uint256 public constant MAX_NFT_PUBLIC = 6899;
+    uint256 private constant MAX_NFT = 6999;
+    uint256 public NFTPrice = 120000000000000000;  // 0.12 ETH
+    bool public reveal;
+    bool public isActive;
+    bool public isPresaleActive;
+    uint256 public constant WHITELIST_MAX_MINT = 2;
+    mapping(address => bool) private whiteList;
+    mapping(address => uint256) private whiteListClaimed;
+    uint256 public giveawayCount;
+    /*
+     * Function to reveal all NFTs
+    */
+    function revealNow() 
+        external 
+        onlyOwner 
+    {
+        reveal = true;
+    }
+    
+    /*
+     * Function addToWhiteList to add whitelisted addresses to presale
+    */
+    function addToWhiteList(
+        address[] memory _addresses
+    ) 
+        external
+        onlyOwner
+    {
+        for (uint256 i = 0; i < _addresses.length; i++) {
+            require(_addresses[i] != address(0), "Cannot add the null address");
+            whiteList[_addresses[i]] = true;
+            /**
+            * @dev We don't want to reset _whiteListClaimed count
+            * if we try to add someone more than once.
+            */
+            whiteListClaimed[_addresses[i]] > 0 ? whiteListClaimed[_addresses[i]] : 0;
+        }
+    }
+    
+    /*
+     * Function onWhiteList returns if address is whitelisted or not 
+    */
+    function onWhiteList(
+        address _addr
+    ) 
+        external 
+        view
+        returns (bool) 
+    {
+        return whiteList[_addr];
+    }
+    
+    /*
+     * Function setIsActive to activate/desactivate the smart contract
+    */
+    function setIsActive(
+        bool _isActive
+    ) 
+        external 
+        onlyOwner 
+    {
+        isActive = _isActive;
+    }
+    
+    /*
+     * Function setPresaleActive to activate/desactivate the presale  
+    */
+    function setPresaleActive(
+        bool _isActive
+    ) 
+        external 
+        onlyOwner 
+    {
+        isPresaleActive = _isActive;
+    }
+    
+    /*
+     * Function to set Base and Blind URI 
+    */
+    function setURIs(
+        string memory _blindURI, 
+        string memory _URI
+    ) 
+        external 
+        onlyOwner 
+    {
+        blindURI = _blindURI;
+        baseURI = _URI;
+    }
+    
+    /*
+     * Function to withdraw collected amount during minting by the owner
+    */
+    function withdraw(
+        address _to
+    ) 
+        public 
+        onlyOwner 
+    {
+        uint balance = address(this).balance;
+        require(balance > 0, "Balance should be more then zero");
+        payable(_to).transfer(balance);
+    }
+    
+    /*
+     * Function to mint new NFTs during the public sale
+     * It is payable. Amount is calculated as per (NFTPrice.mul(_numOfTokens))
+    */
+    function mintNFT(
+        uint256 _numOfTokens
+    ) 
+        public 
+        payable 
+    {
+    
+        require(isActive, 'Contract is not active');
+        require(!isPresaleActive, 'Only whiteing from White List');
+        require(_numOfTokens <= BUY_LIMIT_PER_TX, "Cannot mint above limit");
+        require(totalSupply().add(_numOfTokens).sub(giveawayCount) <= MAX_NFT_PUBLIC, "Purchase would exceed max public supply of NFTs");
+        require(NFTPrice.mul(_numOfTokens) == msg.value, "Ether value sent is not correct");
+        
+        for(uint i = 0; i < _numOfTokens; i++) {
+            _safeMint(msg.sender, totalSupply().sub(giveawayCount));
+        }
+    }
+    
+    /*
+     * Function to mint new NFTs during the presale
+     * It is payable. Amount is calculated as per (NFTPrice.mul(_numOfTokens))
+    */ 
+    function mintNFTDuringPresale(
+        uint256 _numOfTokens
+    ) 
+        public 
+        payable
+    {
+        require(isActive, 'Contract is not active');
+        require(isPresaleActive, 'Only whiteing from White List');
+        require(whiteList[msg.sender], 'You are not on the White List');
+        require(totalSupply() < MAX_NFT_PUBLIC, 'All public tokens have been minted');
+        require(_numOfTokens <= WHITELIST_MAX_MINT, 'Cannot purchase this many tokens');
+        require(totalSupply().add(_numOfTokens).sub(giveawayCount) <= MAX_NFT_PUBLIC, 'Purchase would exceed max public supply of NFTs');
+        require(whiteListClaimed[msg.sender].add(_numOfTokens) <= WHITELIST_MAX_MINT, 'Purchase exceeds max whiteed');
+        require(NFTPrice.mul(_numOfTokens) == msg.value, "Ether value sent is not correct");
+        for (uint256 i = 0; i < _numOfTokens; i++) {
+            
+            whiteListClaimed[msg.sender] += 1;
+            _safeMint(msg.sender, totalSupply().sub(giveawayCount));
+        }
+    }
+    
+    /*
+     * Function to mint all NFTs for giveaway and partnerships
+    */
+    function mintByOwner(
+        address _to, 
+        uint256 _tokenId
+    ) 
+        public 
+        onlyOwner
+    {
+        require(_tokenId >= MAX_NFT_PUBLIC, "Tokens number to mint must exceed number of public tokens");
+        require(_tokenId < MAX_NFT, "Tokens number to mint cannot exceed number of MAX tokens");
+        _safeMint(_to, _tokenId);
+        giveawayCount=giveawayCount.add(1);
+    }
+    
+    /*
+     * Function to mint all NFTs for giveaway and partnerships
+    */
+    function mintMultipleByOwner(
+        address[] memory _to, 
+        uint256[] memory _tokenId
+    ) 
+        public 
+        onlyOwner
+    {
+        require(_to.length == _tokenId.length, "Should have same length");
+        for(uint256 i = 0; i < _to.length; i++){
+            require(_tokenId[i] >= MAX_NFT_PUBLIC, "Tokens number to mint must exceed number of public tokens");
+            require(_tokenId[i] < MAX_NFT, "Tokens number to mint cannot exceed number of MAX tokens");
+            _safeMint(_to[i], _tokenId[i]);
+            giveawayCount = giveawayCount.add(1);
+        }
+    }
+    
+    /*
+     * Function to get token URI of given token ID
+     * URI will be blank untill totalSupply reaches MAX_NFT_PUBLIC
+    */
+    function tokenURI(
+        uint256 _tokenId
+    ) 
+        public 
+        view 
+        virtual 
+        override 
+        returns (string memory) 
+    {
+        require(_exists(_tokenId), "ERC721Metadata: URI query for nonexistent token");
+        if (!reveal) {
+            return string(abi.encodePacked(blindURI));
+        } else {
+            return string(abi.encodePacked(baseURI, _tokenId.toString()));
+        }
+    }
+    
+    function supportsInterface(
+        bytes4 _interfaceId
+    ) 
+        public
+        view 
+        override (ERC721, ERC721Enumerable) 
+        returns (bool) 
+    {
+        return super.supportsInterface(_interfaceId);
+    }
+
+    // Standard functions to be overridden 
+    function _beforeTokenTransfer(
+        address _from, 
+        address _to, 
+        uint256 _tokenId
+    ) 
+        internal 
+        override(ERC721, ERC721Enumerable) 
+    {
+        super._beforeTokenTransfer(_from, _to, _tokenId);
+    }
+}
+
+// ================================================================
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+ 
+contract StickDix is ERC721, Ownable {
+    using Strings for uint256;
+
+    uint256 public constant MAX_TOKENS = 6969;
+    // 20 for the team, 76 for those that minted early.
+    uint256 private constant TOKENS_RESERVED = 96;
+    uint256 public constant TOKEN_COST = 0.06969 ether;
+    uint256 public constant MAX_MINT_PER_TX = 4;
+
+    bool public isSaleActive;
+    uint256 public totalSupply;
+    mapping(address => uint256) private mintedPerWallet;
+
+    string public baseUri;
+
+    constructor() ERC721("StickDix", "DIX") {
+        // Base IPFS URI of the unrevealed StickDix
+        baseUri = "ipfs://QmfRw96NGLU23nhd4nnWGWNvLffopYG3jT8e9SB8TkdQkF/";
+        for (uint256 i = 1; i <= TOKENS_RESERVED; ++i) {
+            _safeMint(msg.sender, i);
+        }
+        totalSupply = TOKENS_RESERVED;
+    }
+
+    // PUBLIC FUNCTIONS
+    function mintDix(uint256 _numTokens) external payable {
+        require(isSaleActive, "Sale is not active.");
+        require(_numTokens <= MAX_MINT_PER_TX, "May only mint 4 StickDix per TX.");
+        require(mintedPerWallet[msg.sender] + _numTokens <= 12, "May only mint 12 per wallet.");
+        uint256 curTotalSupply = totalSupply;
+        require(curTotalSupply + _numTokens <= MAX_TOKENS, "Exceeds `MAX_TOKENS`");
+        require(_numTokens * TOKEN_COST <= msg.value, "Insufficient ETH funds.");
+
+        for (uint256 i = 1; i <= _numTokens; ++i) {
+            _safeMint(msg.sender, curTotalSupply + i);
+        }
+        mintedPerWallet[msg.sender] += _numTokens;
+        totalSupply += _numTokens;
+    }
+
+    // OWNER ONLY FUNCTIONS
+    function flipSaleState() external onlyOwner {
+        isSaleActive = !isSaleActive;
+    }
+
+    function setBaseURI(string memory _baseUri) external onlyOwner {
+        baseUri = _baseUri;
+    }
+
+    function withdrawAll() external payable onlyOwner {
+        uint256 balance = address(this).balance;
+        uint256 balanceOne = balance * 69 / 100;
+        uint256 balanceTwo = balance * 19 / 100;
+        uint256 balanceThree = balance * 9 / 100;
+        uint256 balanceFour = balance - balanceOne - balanceTwo - balanceThree;
+        (bool transferOne, ) = payable(0xb091FbBA63C444946E3Cd9a0d546810702511D05).call{value: balanceOne}("");
+        (bool transferTwo, ) = payable(0x996D22d34b5D985936526B3901C412A81a4292f6).call{value: balanceTwo}("");
+        (bool transferThree, ) = payable(0xDeF5D0c29eb7f754954198DD30b8B2248D8D93Be).call{value: balanceThree}("");
+        (bool transferFour, ) = payable(0x1f6a2990121b0c0e278899eCe0824E8068cC1D37).call{value: balanceFour}("");
+        require(transferOne && transferTwo && transferThree && transferFour, "Transfer failed.");
+    }
+
+    // INTERNAL FUNCTIONS
+    function _baseURI() internal view virtual override returns (string memory) {
+        return baseUri;
+    }
+}
+
+// ================================================================
+https://etherscan.io/address/0x133ba8f869f3ae35a5ca840ba20acfa31b0e2a61#code
+
+pragma solidity ^0.8.0;
+
+contract MUSHROHMS is ERC721Enumerable, Ownable {
+    using Strings for uint256;
+    uint256 public PRICE = 0 ether;
+    
+    uint256 public MAX_MUSHROHMS = 1500;
+    uint256 public MAX_PER_MINT = 1;
+    uint256 public MAX_MUSHROHMS_MINT = 1;
+    address public constant founderAddress = 0xFA5af8c17736B69a4CEE0E6C05DC139A92897aA9;
+    uint256 public numshrohmsMinted;
+    
+    string public baseTokenURI = "ipfs://QmbJT54Bx7hxN5NJ29F8wFZ4YNq59Vf5tSSTeCQqeN9swf/";
+    bool public presaleStarted = true;
+    bool public pause = false;
+    
+    mapping(address => bool) private _presaleEligible;
+    mapping(address => uint256) private _totalClaimed;
+
+    event MushrohmMint(address minter, uint256 amountOfshrohms);
+    
+    constructor() ERC721("MUSHROHMS", "Shrohm") {}
+    
+    function togglePresaleStarted() external onlyOwner {
+        presaleStarted = !presaleStarted;
+    }
+    
+    function togglePause() external onlyOwner {
+        pause = !pause;
+    }
+    
+    function setbaseTokenURI(string memory baseURI) public onlyOwner returns (string memory) {
+        baseTokenURI = baseURI;
+        return baseTokenURI;
+    }
+    
+    function setPrice(uint256 inPrice) public onlyOwner returns (uint256) {
+        PRICE = inPrice;
+        return PRICE;
+    }
+    
+    function checkBal(address owner) external view returns (uint256) {
+        uint256 currentBal = address(this).balance;
+        return currentBal;
+    }
+    
+    function addToPresale(address[] calldata addresses) external onlyOwner {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            require(addresses[i] != address(0), "Cannot add null address");
+
+            _presaleEligible[addresses[i]] = true;
+
+            _totalClaimed[addresses[i]] > 0 ? _totalClaimed[addresses[i]] : 0;
+        }
+    }
+
+    function checkPresaleEligiblity(address addr) external view returns (bool) {
+        return _presaleEligible[addr];
+    }
+
+    function amountClaimedBy(address owner) external view returns (uint256) {
+        require(owner != address(0), "Cannot add null address");
+
+        return _totalClaimed[owner];
+    }
+    
+    function mint(uint256 amountOfshrohms) external payable {
+        require(pause == false);
+        if (presaleStarted == true) {
+            require(_presaleEligible[msg.sender], "You are not eligible for the presale!");
+        }
+        require(totalSupply() < MAX_MUSHROHMS, "All tokens have been minted.");
+        require(amountOfshrohms <= MAX_PER_MINT, "You can only mint one Mushrohm per address.");
+        require(totalSupply() + amountOfshrohms <= MAX_MUSHROHMS, "Minting would exceed max supply!");
+        require(_totalClaimed[msg.sender] + amountOfshrohms <= MAX_MUSHROHMS_MINT, "Purchase exceeds max allowed per wallet.");
+        require(amountOfshrohms > 0, "Must mint at least one Mushrohm.");
+        require(PRICE * amountOfshrohms == msg.value, "ETH amount is incorrect.");
+        
+        for (uint256 i = 0; i < amountOfshrohms; i++) {
+            uint256 tokenId = numshrohmsMinted + 1;
+
+            numshrohmsMinted += 1;
+            _totalClaimed[msg.sender] += 1;
+            _safeMint(msg.sender, tokenId);
+        }
+
+        emit MushrohmMint(msg.sender, amountOfshrohms);
+    }
+    
+    function withdrawAll() public onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "Insufficent balance");
+        _widthdraw(founderAddress, balance);
+    }
+    
+    function _widthdraw(address _address, uint256 _amount) private {
+        (bool success, ) = _address.call{ value: _amount }("");
+        require(success, "Failed to widthdraw Ether");
+    }
+    
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
+        return bytes(baseTokenURI).length > 0 ? string(abi.encodePacked(baseTokenURI, tokenId.toString(), ".json")) : "";
+    }
+}
+
+// ================================================================
+// https://etherscan.io/address/0x368ad4a7a7f49b8fa8f34476be0fc4d04ce622f5#code
+// https://opensea.io/assets/0x368ad4a7a7f49b8fa8f34476be0fc4d04ce622f5/2562
+
+// SPDX-License-Identifier: MIT
+pragma solidity >=0.4.22 <0.9.0;
+
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+/**
+ * @title Organic Grow Crystals contract
+ *
+ * @notice Smart Contract provides ERC721 functionality with public and private sales options.
+ * @author Andrey Skurlatov
+ */
+contract Og is ERC721Enumerable, Ownable {
+  // Use safeMath library for doing arithmetic with uint256 and uint8 numbers
+  using SafeMath for uint256;
+  using SafeMath for uint8;
+
+  // address to withdraw funds from contract
+  address payable private withdrawAddress;
+
+  // maximum number of tokens that can be purchased in one transaction
+  uint8 public constant MAX_PURCHASE = 10;
+
+  // price of a single crystal in wei
+  uint256 public constant OG_PRICE = 103010000000000000 wei;
+
+  // color id should be in this range
+  uint8 public constant COLORS_VARIATIONS = 6;
+
+  // freeze contract tokens have persistence tokenURI that can not be changed
+  bool public isFreeze;
+
+  // maximum number of crystals that can be minted on this contract
+  uint256 public maxTotalSupply;
+
+  // base uri for token metadata
+  string private _baseTokenURI;
+
+  // private sale current status - active or not
+  bool private _privateSale;
+
+  // public sale current status - active or not
+  bool private _publicSale;
+
+  // whitelisted addresses that can participate in the presale event
+  mapping(address => uint8) private _whiteList;
+
+  // used minting slots for public sale
+  mapping(address => uint8) private _publicSlots;
+
+  // all token URI's map
+  mapping(uint256 => string) private _tokenURIs;
+
+  // token colors storage
+  mapping(uint256 => uint8) private _tokenColors;
+
+  // event that emits when private sale changes state
+  event privateSaleState(bool active);
+
+  // event that emits when public sale changes state
+  event publicSaleState(bool active);
+
+  // event that emits when user bought crystals on private sale
+  event addressPrivateSlotsChange(address addr, uint256 slots);
+
+  // event that emits when user bought crystals on public sale
+  event addressPublicSlotsChange(address addr, uint256 slots, uint256 totalRemaining);
+
+  /**
+  * @dev contract constructor
+  *
+  * @param name is contract name
+  * @param symbol is contract basic symbol
+  * @param baseTokenURI is base (default) tokenURI with metadata
+  * @param maxSupply is Crystals tokens max supply
+  * @param _withDrawAddress is address to withdraw funds from contract
+  */
+  constructor (
+    string memory name,
+    string memory symbol,
+    string memory baseTokenURI,
+    uint256 maxSupply,
+    address payable _withDrawAddress
+  ) ERC721(name,symbol) {
+    _baseTokenURI = baseTokenURI;
+    maxTotalSupply = maxSupply;
+    withdrawAddress = _withDrawAddress;
+  }
+
+  /**
+  * @dev check if private sale is active now
+  *
+  * @return bool if private sale active
+  */
+  function isPrivateSaleActive() public view virtual returns (bool) {
+    return _privateSale;
+  }
+
+  /**
+  * @dev switch private sale state
+  */
+  function flipPrivateSaleState() external onlyOwner {
+    _privateSale = !_privateSale;
+    emit privateSaleState(_privateSale);
+  }
+
+  /**
+  * @dev check if public sale is active now
+  *
+  * @return bool if private sale active
+  */
+  function isPublicSaleActive() public view virtual returns (bool) {
+    return _publicSale;
+  }
+
+  /**
+  * @dev check if public sale is already finished
+  *
+  * @return bool if private sale active
+  */
+  function isPublicSaleEnded() public view virtual returns (bool) {
+    return maxTotalSupply == totalSupply();
+  }
+
+  /**
+  * @dev switch public sale state
+  */
+  function flipPublicSaleState() external onlyOwner {
+    _publicSale = !_publicSale;
+    emit publicSaleState(_publicSale);
+  }
+
+  /**
+  * @dev add ETH addresses to whitelist
+  *
+  * Requirements:
+  * - private sale must be inactive
+  * - numberOfTokens should be less than MAX_PURCHASE value
+  *
+  * @param addresses address[] array of ETH addresses that need to be whitelisted
+  * @param numberOfTokens uint8 tokens amount for private sale per address
+  */
+  function addWhitelistAddresses(uint8 numberOfTokens, address[] calldata addresses) external onlyOwner {
+    require(!isFreeze, "contract have already frozen!");
+    require(!_privateSale, "Private sale is now running!!!");
+    require(numberOfTokens <= MAX_PURCHASE, "numberOfTokens is higher that MAX PURCHASE limit!");
+
+    for (uint256 i = 0; i < addresses.length; i++) {
+      if (addresses[i] != address(0)) {
+        _whiteList[addresses[i]] = numberOfTokens;
+      }
+    }
+  }
+
+  /**
+  * @dev remove ETH addresses from whitelist
+  *
+  * Requirements:
+  * - private sale must be inactive
+  *
+  * @param addresses address[] array of ETH addresses that need to be removed from whitelist
+  */
+  function removeWhitelistAddresses(address[] calldata addresses) external onlyOwner {
+    require(!isFreeze, "contract have already frozen!");
+    require(!_privateSale, "Private sale is now running!!!");
+
+    for (uint256 i = 0; i < addresses.length; i++) {
+      _whiteList[addresses[i]] = 0;
+    }
+  }
+
+  /**
+  * @dev check if address whitelisted
+  *
+  * @param _address address ETH address to check
+  * @return bool whitelist status
+  */
+  function isWhitelisted(address _address) public view returns (bool) {
+    return (_whiteList[_address] > 0 || balanceOf(_address) > 0)
+      ? true
+      : false;
+  }
+
+  /**
+  * @dev check address remaining mint slots for private sale
+  *
+  * @param _address address ETH address to check
+  * @return uint8 remaining slots
+  */
+  function addressPrivateSaleSlots(address _address) public view returns (uint256) {
+    return _whiteList[_address];
+  }
+
+  /**
+  * @dev check address remaining mint slots for public sale
+  *
+  * @param _address address ETH address to check
+  * @return uint8 remaining slots
+  */
+  function addressPublicSaleSlots(address _address) public view returns (uint8) {
+    return MAX_PURCHASE - _publicSlots[_address];
+  }
+
+  /**
+  * @dev mint new Crystal token with given
+  * color to provided address
+  *
+  * Requirements:
+  * - private sale should be active
+  * - color should be in a valid range
+  * - sender should have private sale minting slots
+  * - sender should pay OG price for each token
+  *
+  * @param numberOfTokens is an amount of tokens to mint
+  * @param colors is array with Crystal colors
+  */
+  function mintPrivate(uint8 numberOfTokens, uint8[] memory colors) public payable {
+    require(_privateSale, "Private sale is not active!");
+    require(numberOfTokens > 0, "Number of tokens cannot be lower than, or equal to 0!");
+    require(totalSupply() + numberOfTokens <= maxTotalSupply, "Total Supply limit have reached!");
+    require(numberOfTokens <= _whiteList[msg.sender], "Not enough presale slots to mint tokens!");
+    require(OG_PRICE * numberOfTokens == msg.value, "Ether value sent is not correct!");
+
+    _whiteList[msg.sender] = uint8(_whiteList[msg.sender].sub(numberOfTokens));
+    _mintTokens(msg.sender, numberOfTokens, colors);
+
+    payable(withdrawAddress).transfer(msg.value);
+
+    emit addressPrivateSlotsChange(msg.sender, _whiteList[msg.sender]);
+  }
+
+  /**
+  * @dev mint new Crystal token with given
+  * color to provided address
+  *
+  * Requirements:
+  * - public sale should be active
+  * - color should be in a valid range
+  * - sender should have public sale minting slots
+  * - sender should pay OG price for each token
+  *
+  * @param numberOfTokens is an amount of tokens to mint
+  * @param colors is array with Crystal colors
+  */
+  function mintPublic(uint8 numberOfTokens, uint8[] memory colors) public payable {
+    require(_publicSale, "Public sale is not active!");
+    require(numberOfTokens > 0, "Number of tokens cannot be lower than, or equal to 0!");
+    require(numberOfTokens <= MAX_PURCHASE, "Trying to mint too many tokens!");
+    require(totalSupply() + numberOfTokens <= maxTotalSupply, "Total Supply limit have reached!");
+    require(numberOfTokens + _publicSlots[msg.sender] <= MAX_PURCHASE, "Address limit have reached!");
+    require(OG_PRICE * numberOfTokens == msg.value, "Ether value sent is not correct!");
+
+    _publicSlots[msg.sender] = uint8(_publicSlots[msg.sender].add(numberOfTokens));
+    _mintTokens(msg.sender, numberOfTokens, colors);
+
+    payable(withdrawAddress).transfer(msg.value);
+
+    emit addressPublicSlotsChange(msg.sender, MAX_PURCHASE - _publicSlots[msg.sender], maxTotalSupply - totalSupply());
+  }
+
+  /**
+  * @dev mint gift Crystal tokens with given URI
+  *
+  * Requirements:
+  * - sender must be contract owner
+  *
+  * @param to is address where to mint new token
+  * @param numberOfTokens is an amount of tokens to mint
+  * @param colors is array with Crystal colors
+  */
+  function mintGiftToken(address to, uint8 numberOfTokens, uint8[] memory colors) public onlyOwner {
+    require(numberOfTokens > 0, "Number of tokens cannot be lower than, or equal to 0!");
+    require(totalSupply() + numberOfTokens <= maxTotalSupply, "Total Supply limit have reached!");
+
+    _mintTokens(to, numberOfTokens, colors);
+  }
+
+  /**
+  * @dev mint new Crystal tokens with given
+  * color to sender
+  *
+  * @param numberOfTokens is an amount of tokens to mint
+  * @param colors is array with Crystal colors
+  */
+  function _mintTokens(address to, uint8 numberOfTokens, uint8[] memory colors) private {
+    require(!isFreeze, "contract have already frozen!");
+    require(numberOfTokens == colors.length, "Colors array length should be equal to numberOfTokens!");
+
+    for (uint8 i = 0; i < numberOfTokens; i++) {
+      uint256 tokenId = totalSupply().add(1);
+      _safeMint(to, tokenId);
+      _setTokenURI(tokenId, _formatURI(_baseTokenURI, _uint2str(tokenId)));
+      _tokenColors[tokenId] = colors[i];
+    }
+  }
+
+  /**
+  * @dev return color of given crystal
+  */
+  function tokenColor(uint256 tokenId) public view virtual returns (uint8) {
+    require(_exists(tokenId), "ERC721URIStorage: Color query for nonexistent token");
+
+    return _tokenColors[tokenId];
+  }
+
+  /**
+  * @dev freeze contract to prevent any tokenURI changes
+  * and set maxTotalSupply as current total supply
+  *
+  * Requirements:
+  *
+  * - `sender` must be contract owner
+  */
+  function freeze() external onlyOwner {
+    require(!isFreeze, "contract have already frozen!");
+    isFreeze = true;
+    maxTotalSupply = totalSupply();
+  }
+
+  /**
+  * @dev Sets public function that will set
+  * `_tokenURI` as the tokenURI of `tokenId`.
+  *
+  * Requirements:
+  *
+  * - `tokenId` must exist.
+  * - `sender` must be contract owner
+  */
+  function setTokenURI(uint256 tokenId, string memory _tokenURI) external onlyOwner {
+    require(!isFreeze, "contract have already frozen!");
+    _setTokenURI(tokenId, _tokenURI);
+  }
+
+  /**
+  * @dev See {IERC721Metadata-tokenURI}.
+  */
+  function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+    require(_exists(tokenId), "ERC721URIStorage: URI query for nonexistent token");
+
+    string memory _tokenURI = _tokenURIs[tokenId];
+    string memory base = _baseURI();
+
+    // If there is no base URI, return the token URI.
+    if (bytes(base).length == 0) {
+      return _tokenURI;
+    }
+    // If both are set, concatenate the baseURI and tokenURI (via abi.encodePacked).
+    if (bytes(_tokenURI).length > 0) {
+      return string(abi.encodePacked(base, _tokenURI));
+    }
+
+    return super.tokenURI(tokenId);
+  }
+
+  /**
+   * @dev Sets `_tokenURI` as the tokenURI of `tokenId`.
+   *
+   * Requirements:
+   *
+   * - `tokenId` must exist.
+   */
+  function _setTokenURI(uint256 tokenId, string memory _tokenURI) internal virtual {
+    require(_exists(tokenId), "ERC721URIStorage: URI set of nonexistent token");
+    _tokenURIs[tokenId] = _tokenURI;
+  }
+
+  /**
+   * @dev Destroys `tokenId`.
+   * The approval is cleared when the token is burned.
+   *
+   * Requirements:
+   *
+   * - `tokenId` must exist.
+   *
+   * Emits a {Transfer} event.
+   */
+  function _burn(uint256 tokenId) internal virtual override {
+    super._burn(tokenId);
+
+    if (bytes(_tokenURIs[tokenId]).length != 0) {
+      delete _tokenURIs[tokenId];
+    }
+
+    delete _tokenColors[tokenId];
+  }
+
+  /**
+  * @dev check how many tokens is available for mint
+  *
+  * @return uint256 remaining tokens
+  */
+  function availableForMint() public view virtual returns (uint256) {
+    return (maxTotalSupply - totalSupply());
+  }
+
+  function withdraw() external onlyOwner {
+    uint256 balance = address(this).balance;
+    payable(msg.sender).transfer(balance);
+  }
+
+  /**
+   * @dev format token URI for given token ID
+   *
+   * @param basePath is tokenURI base path
+   * @param tokenID is string representation of SST token ID
+   * @return string is formatted tokenURI with metadata
+   */
+  function _formatURI(string memory basePath, string memory tokenID) internal pure returns (string memory) {
+    return string(abi.encodePacked(basePath, tokenID, ".json"));
+  }
+
+  /**
+   * @dev format given uint to memory string
+   *
+   * @param _i uint to convert
+   * @return string is uint converted to string
+   */
+  function _uint2str(uint _i) internal pure returns (string memory) {
+    if (_i == 0) {
+      return "0";
+    }
+    uint j = _i;
+    uint len;
+    while (j != 0) {
+      len++;
+      j /= 10;
+    }
+    bytes memory bstr = new bytes(len);
+    uint k = len;
+    while (_i != 0) {
+      k = k-1;
+      uint8 temp = (48 + uint8(_i - _i / 10 * 10));
+      bytes1 b1 = bytes1(temp);
+      bstr[k] = b1;
+      _i /= 10;
+    }
+    return string(bstr);
+  }
+}
+
+// ================================================================
+// https://etherscan.io/address/0xea5f32ed4044c44c44ab833d8071e672aad142ff#code
+
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
+
+interface IStaking {
+    function depositsOf(address account) external view returns (uint256[] memory);
+}
+
+contract AuctionMint is ERC721URIStorage, Ownable, Pausable {
+    using Strings for uint256;
+    using Counters for Counters.Counter;
+    event Mint(address indexed sender, uint256 startWith, uint256 times);
+    event AuctionStarted(uint256 auctionID);
+    event AuctionEnded(uint256 auctionID);
+    event BidPlaced(uint256 indexed auctionID, address indexed bidder, uint256 bidIndex, uint256 unitPrice, uint256 quantity);
+    event BidRefunded(address indexed bidder, uint256 refundAmount, uint256 tokensRefunded);
+    event WinnerChosen(uint256 indexed auctionID, address indexed bidder, uint256 unitPrice, uint256 quantity);
+    struct Bid {
+        uint256 quantityToMint;
+        uint256 costPerMint;
+    }
+    struct Status {
+        bool started;
+        bool ended;
+    }
+    Counters.Counter private auctionCounter;
+    Counters.Counter private bidCounter;
+
+    address public contractAddress;
+    IERC20 public erc20Token;
+    IStaking public stakingContract;
+    uint256 public requiredERC20HoldingAmt;
+    uint256 public constant MAX_SUPPLY = 9000;
+    uint256 public immutable AUCTION_MINT_QTY;
+    uint256 public constant MAX_BID_QUANTITY = 10;
+    uint256 public constant NUM_AUCTIONS = 3;
+    uint256 public constant MIN_UNIT_PRICE = 0.05 ether;
+
+    uint256 public currentSupply;
+    string public baseURI;
+    bool public allowRefunds;
+
+    bool private hasAuctionStarted;
+    bool private hasAuctionFinished;
+    mapping(address => uint256) private auctionWhitelist;
+    mapping (uint256 => Status) private auctionStatus;
+    mapping(address => Bid) private bids;
+    mapping (uint256 => uint256) private auctionRemaingItems;
+    mapping(address => uint256) private spentERC20Tokens;
+
+    constructor(uint256 auctionMintQty) ERC721("AuctionMintContract", "AMC") {
+        contractAddress = address(this);
+        AUCTION_MINT_QTY = auctionMintQty;
+        for(uint256 i = 0; i < NUM_AUCTIONS; i++) {
+            auctionRemaingItems[i] = auctionMintQty;
+        }
+        pause(); // start paused to ensure nothing happens
+    }
+    function pause() public onlyOwner {
+        _pause();
+    }
+    function unpause() public onlyOwner {
+        _unpause();
+    }
+    function setContracts(address erc20Address, address stakingAddress) public onlyOwner {
+        erc20Token = IERC20(erc20Address);
+        stakingContract = IStaking(stakingAddress);
+    }
+    function setERC20HoldingAmount(uint256 erc20HoldingAmt) public onlyOwner {
+        requiredERC20HoldingAmt = erc20HoldingAmt;
+    }
+    function _baseURI() internal view virtual override returns (string memory){
+        return baseURI;
+    }
+    function setBaseURI(string memory _newURI) public onlyOwner {
+        baseURI = _newURI;
+    }
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        require(_exists(tokenId), "Token does not exist.");
+        
+        return bytes(baseURI).length > 0
+            ? string(abi.encodePacked(baseURI, tokenId.toString(), ".json")) : ".json";
+    }
+    function setTokenURI(uint256 _tokenId, string memory _tokenURI) public onlyOwner {
+        _setTokenURI(_tokenId, _tokenURI);
+    }
+    modifier requireContractsSet() {
+        require(address(erc20Token) != address(0) && address(stakingContract) != address(0), "Contracts not set");
+        _;
+    }
+    modifier whenAuctionEnded() {
+        require(currentAuctionStatus().started && currentAuctionStatus().ended, "Auction has not been completed");
+        _;
+    }
+    modifier whenAuctionActive() {
+        require(currentAuctionStatus().started && !currentAuctionStatus().ended, "Auction is not active.");
+        _;
+    }
+    modifier whenRefundsAllowed() {
+        require(allowRefunds, "Refunds currently not allowed.");
+        _;
+    }
+    function currentAuctionStatus() public view returns (Status memory) {
+        return auctionStatus[auctionCounter.current()];
+    }
+    function getCurrentAuction() external view returns (uint) {
+        return auctionCounter.current();
+    }
+    function incrementAuction() external onlyOwner whenPaused {
+        auctionCounter.increment();
+        require(auctionCounter.current() < NUM_AUCTIONS, "Max number of auctions reached.");
+    }
+    function decrementAuction() external onlyOwner whenPaused {
+        auctionCounter.decrement();
+    }
+    function startCurrentAuction() external onlyOwner whenPaused requireContractsSet {
+        uint256 currentAuctionID = auctionCounter.current();
+        require(!currentAuctionStatus().started && !currentAuctionStatus().ended, "Auction cannot be started again");
+        auctionStatus[currentAuctionID].started = true;
+        unpause();
+        emit AuctionStarted(currentAuctionID);
+    }
+    function endCurrentAuction() external onlyOwner whenAuctionActive {
+        uint256 currentAuctionID = auctionCounter.current();
+        auctionStatus[currentAuctionID].ended = true;
+        if (!paused()) {
+            pause();
+        }
+        emit AuctionEnded(currentAuctionID);
+    }
+    function getBid(address bidAddress) external view returns (Bid memory) {
+        return bids[bidAddress];
+    }
+    function getCostPerMintValue(address bidder) external view returns(uint256) {
+        return bids[bidder].costPerMint;
+    }
+    function getRemainingItemsForAuction(uint256 auctionID) external view returns (uint256) {
+        require(auctionID < NUM_AUCTIONS, "Invalid auction");
+        return auctionRemaingItems[auctionID];
+    }
+    function setAllowRefunds(bool allowed) external onlyOwner {
+        allowRefunds = allowed;
+    }
+    function bid(uint256 _times) public payable whenNotPaused whenAuctionActive {
+        if(requiredERC20HoldingAmt > 0 && spentERC20Tokens[_msgSender()] == 0) {
+            require(erc20Token.balanceOf(_msgSender()) >= requiredERC20HoldingAmt, "Not enough ERC20 tokens");
+            uint256[] memory deposits = stakingContract.depositsOf(_msgSender());
+            require(deposits.length > 0, "Staked ERC721 tokens required");
+            erc20Token.transferFrom(_msgSender(), address(this), requiredERC20HoldingAmt);
+            spentERC20Tokens[_msgSender()] += requiredERC20HoldingAmt;
+        }
+        uint256 quantity = bids[_msgSender()].quantityToMint;
+        uint256 costPer = bids[_msgSender()].costPerMint;
+        // Allow users with previous mint bids to pump up their total bid up
+        require(quantity > 0 || _times > 0, "Invalid number of mints");
+        require(quantity + _times <= MAX_BID_QUANTITY, "Quantity too high for auction");
+        uint256 totalCost = msg.value + (costPer * quantity);
+        quantity += _times;
+        costPer = totalCost / quantity;
+        require(costPer >= MIN_UNIT_PRICE, "Price per mint too low");
+        bids[_msgSender()].quantityToMint = quantity;
+        bids[_msgSender()].costPerMint = costPer;
+        emit BidPlaced(auctionCounter.current(), _msgSender(), bidCounter.current(), costPer, quantity);
+        bidCounter.increment();
+    }
+    // The input must be sorted off chain by collecting the BidPlaced events.
+    function pickWinners(address[] calldata bidders) external onlyOwner whenPaused whenAuctionEnded {
+        uint256 auctionID = auctionCounter.current();
+        for(uint256 i = 0; i < bidders.length; i++) {
+            address bidderCur = bidders[i];
+            uint256 bidUnitPrice = bids[bidderCur].costPerMint;
+            uint256 bidQuantity = bids[bidderCur].quantityToMint;
+
+            if (bidUnitPrice == 0 || bidQuantity == 0) {
+                continue;
+            }
+
+            // If this bid uses the last of the available mints, end the loop and choose this last winner
+            if (auctionRemaingItems[auctionID] == bidQuantity) {
+                auctionWhitelist[bidderCur] += bids[bidderCur].quantityToMint;
+                bids[bidderCur] = Bid(0, 0);
+                emit WinnerChosen(auctionID, bidderCur, bidUnitPrice, bidQuantity);
+                auctionRemaingItems[auctionID] = 0;
+                break;
+            }
+            // If there isn't enough available mints to satisfy the entire bid, give the remaining mints to the winner
+            else if(auctionRemaingItems[auctionID] < bidQuantity) {
+                auctionWhitelist[bidderCur] += auctionRemaingItems[auctionID];
+                emit WinnerChosen(auctionID, bidderCur, bidUnitPrice, auctionRemaingItems[auctionID]);
+                bids[bidderCur].quantityToMint -= auctionRemaingItems[auctionID];
+                auctionRemaingItems[auctionID] = 0;
+                break;
+            }
+            // The bid doesn't end the auction selection, so choose the bid and move on
+            else {
+                auctionWhitelist[bidderCur] += bids[bidderCur].quantityToMint;
+                bids[bidderCur] = Bid(0, 0);
+                emit WinnerChosen(auctionID, bidderCur, bidUnitPrice, bidQuantity);
+                auctionRemaingItems[auctionID] -= bidQuantity;
+            }
+        }
+    }
+    // Refunds losing bidders from the contract's balance.
+    function refundBidders(address payable[] calldata bidders) external onlyOwner whenPaused whenAuctionEnded {
+        uint256 totalRefundAmount = 0;
+        for(uint256 i = 0; i < bidders.length; i++) {
+            address payable bidder = bidders[i];
+            uint256 refundAmt = bids[bidder].costPerMint * bids[bidder].quantityToMint;
+            if(refundAmt == 0) {
+                continue;
+            }
+            bids[bidder] = Bid(0,0);
+            uint256 tokens = spentERC20Tokens[bidder];
+            if(tokens > 0) {
+                spentERC20Tokens[bidder] = 0;
+                erc20Token.transfer(bidder, tokens);
+            }
+            bidder.transfer(refundAmt);
+            totalRefundAmount += refundAmt;
+            emit BidRefunded(bidder, refundAmt, tokens);
+        }
+    }
+    // Allow people to claim their own rewards if desired, only when auction has ended and withdrawls are allowed
+    function claimRefund() external whenRefundsAllowed whenAuctionEnded {
+        require(auctionCounter.current() == NUM_AUCTIONS - 1, "The final auction has not ended");
+        uint256 refundAmt = bids[_msgSender()].costPerMint * bids[_msgSender()].quantityToMint;
+        require(refundAmt > 0, "Refund amount is 0.");
+        bids[_msgSender()] = Bid(0,0);
+        uint256 tokens = spentERC20Tokens[_msgSender()];
+        if(tokens > 0) {
+            spentERC20Tokens[_msgSender()] = 0;
+            erc20Token.transfer(_msgSender(), tokens);
+        }
+        payable(_msgSender()).transfer(refundAmt);
+        emit BidRefunded(_msgSender(), refundAmt, tokens);
+    }
+    function claimAuctionMints() public whenAuctionEnded {
+        require(auctionCounter.current() == NUM_AUCTIONS - 1, "The final auction has not ended");
+        require(auctionWhitelist[_msgSender()] > 0, "Address didn't win auction");
+        uint256 startingSupply = currentSupply;
+        for(uint256 i = 0; i < auctionWhitelist[_msgSender()]; i++){
+            if(currentSupply >= MAX_SUPPLY) {
+                // if the collection mints out before the user is done with what they bid,
+                // move to the losing bids to allow the rest to be refunded
+                break;
+            }
+            _mint(_msgSender(), ++currentSupply);
+        }
+        if(currentSupply - startingSupply < auctionWhitelist[_msgSender()]) {
+            auctionWhitelist[_msgSender()] -= (currentSupply - startingSupply);
+        }
+        else {
+            auctionWhitelist[_msgSender()] = 0;
+        }
+        emit Mint(_msgSender(), startingSupply + 1, currentSupply - startingSupply);
+    }
+    function withdraw() external onlyOwner whenAuctionEnded {
+        require(auctionCounter.current() == NUM_AUCTIONS - 1, "The final auction has not ended");
+        payable(_msgSender()).transfer(address(this).balance);
+    }    
+}
